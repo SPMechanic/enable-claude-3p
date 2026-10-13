@@ -195,159 +195,10 @@ first if you're unsure what state your machine is in.
 .\Enable-Claude3P.ps1 -Restore -Apply -Force
 ```
 
-### Present a gateway model under a custom label
-```bash
-.\Enable-Claude3P.ps1 -Apply -NewKey "<YOUR-LLM-KITA-KEY>" -AuthScheme Bearer -ScrubStale -ResetCaches -Force
+### Present the native 3-model Claude pair
 
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" -Models '[{"name":"claude-sonnet-5-5","labelOverride":"Sonnet 5.5"},{"name":"claude-opus-4.8","labelOverride":"Opus 4.8"}, {"name":"haiku-5-5","labelOverride":"Haiku 5.5"}]' -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" -Models '[{"name":"claude-sonnet-5-5","labelOverride":"Sonnet 5.5"},{"name":"claude-opus-4.8","labelOverride":"Opus 4.8"},{"name":"claude-haiku-5-5","labelOverride":"Haiku 5-5"}]' `
-  -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" -Models '[{"name":"kimi-k3","labelOverride":"sonnet-5-5"},{"name":"glm-5.3","labelOverride":"opus-4.8"},{"name":"minimax-m3","labelOverride":"haiku-5-5"}]' -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-```
-
-### Open-source models mapped to all 5 Claude tiers
-
-The LLM-Kita gateway serves open-source models that map cleanly onto Claude's
-5-tier family. 
-
-### Models with Vision Support
-
-| **Model ID**       |
-| ------------------ |
-| `gpt-6-astra`      |
-| `glm-5.3-flash`    |
-| `gpt-6-luna`       |
-| `claude-opus-4.8`  |
-| `gemini-3.7-flash` |
-| `gpt-5.6-terra`    |
-| `kimi-k3`          |
-| `gpt-5.6`          |
-| `gpt-5.6-luna`     |
-| `mimo-v2.6-pro`    |
-| `gpt-5.6-sol`      |
-| `gemini-3.6-flash` |
-
-### Models Without Vision Support
-
-| **Model ID**                 |
-| ---------------------------- |
-| `claude-haiku-5-5`           |
-| `claude-sonnet-5-5`          |
-| `deepseek-v4.1-flash`        |
-| `glm-5.3`                    |
-| `mimo-v2.5`                  |
-| `glm-5.2`                    |
-| `auto`                       |
-| `hy4`                        |
-| `minimax-m3`                 |
-| `mimo-v2.6-flash`            |
-| `minimax-m2.5`               |
-| `minimax-m2.7`               |
-| `muse-spark-1.2-contributor` |
-| `muse-spark-1.3-contributor` |
-| `glm-5.1`                    |
-| `deepseek-v4-pro-0813`       |
-| `kimi-k2.7-code`             |
-| `kimi-k2.7-code-highspeed`   |
-| `deepseek-v4-flash-0731`     |
-| `space-bunny`                |
-| `glm-5.3-flashx`             |
-| `deepseek-v4-flash`          |
-| `qwen3.8-max`                |
-| `mimo-v2.5-pro`              |
-| `hy3`                        |
-
-**Array order determines tier** (pos 0=sonnet, 1=opus, 2=haiku,
-3=fable, 4=mythos), so order the entries to match the tier you want each model
-to surface as. This recipe fills all 5 tiers in one pass:
-
-```bash
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" `
-  -Models '[{"name":"glm-5.3","labelOverride":"Sonnet 5.5"},{"name":"kimi-k3","labelOverride":"Opus 4.8"},{"name":"minimax-m3","labelOverride":"Haiku 5.5"},{"name":"deepseek-v4-pro-0813","labelOverride":"Fable"},{"name":"qwen3.8-max","labelOverride":"Mythos"}]' `
-  -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-```
-
-Recommended open-source → Claude tier mapping (prices are USD per 1M tokens,
-input/output):
-
-| Pos | Tier | `name` (wire id) | `labelOverride` | Why this model fits the tier | Price in/out |
-|---|---|---|---|---|---|
-| 0 | sonnet | `glm-5.3` | `Sonnet 5.5` | Balanced general-purpose + strong coding; mid-price workhorse | $0.048 / $0.155 |
-| 1 | opus | `kimi-k3` | `Opus 4.8` | Moonshot flagship, strongest reasoning, highest output cost | $0.037 / $0.186 |
-| 2 | haiku | `minimax-m3` | `Haiku 5.5` | Cheapest tier, fast, lightweight | $0.0097 / $0.073 |
-| 3 | fable | `deepseek-v4-pro-0813` | `Fable` | "Pro" reasoning model, distinct capability band | $0.067 / $0.133 |
-| 4 | mythos | `qwen3.8-max` | `Mythos` | "Max" tier, premium distinctive model | $0.056 / $0.167 |
-
-Subsets work too  -  pass only the tiers you want. A 3-model budget set (sonnet /
-opus / haiku only):
-
-```bash
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" `
-  -Models '[{"name":"glm-5.3","labelOverride":"Sonnet 5.5"},{"name":"kimi-k3","labelOverride":"Opus 4.8"},{"name":"minimax-m3","labelOverride":"Haiku 5.5"}]' `
-  -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-```
-
-Other open-source text models on the gateway you can swap in: `glm-5.1`,
-`glm-5.2`, `glm-5.3-flash`, `glm-5.3-flashx`, `kimi-k2.7-code`,
-`kimi-k2.7-code-highspeed`, `deepseek-v4-flash`, `deepseek-v4-flash-0731`,
-`deepseek-v4.1-flash`, `hy3`, `hy4`, `mimo-v2.5-pro`, `mimo-v2.6-pro`,
-`mimo-v2.6-flash`, `minimax-m2.5`, `minimax-m2.7`. Verify any `name` against
-the gateway's `/v1/models` endpoint before committing  -  `name` is load-bearing
-(a wrong id silently breaks inference), while `labelOverride` is UI-only and
-safe to set to anything.
-
-### All-vision catalogs (every tier supports images)
-
-The gateway reports `supports_vision: true` for only a subset of models. These
-two recipes use **only** vision-capable models, so every tier can accept image
-input. Verify a model's vision flag against `/v1/models` before swapping  -  the
-`supports_vision` field is authoritative.
-
-**All-vision, open-source only**  -  the gateway has exactly 3 open-source vision
-models, so this maxes out at 3 tiers (sonnet / opus / haiku):
-
-```bash
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" `
-  -Models '[{"name":"glm-5.3-flash","labelOverride":"Sonnet 5.5"},{"name":"kimi-k3","labelOverride":"Opus 4.8"},{"name":"mimo-v2.6-pro","labelOverride":"Haiku 5.5"}]' `
-  -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-```
-
-| Pos | Tier | `name` | `labelOverride` | Notes |
-|---|---|---|---|---|
-| 0 | sonnet | `glm-5.3-flash` | `Sonnet 5.5` | GLM flash variant  -  vision + fast; lighter than `glm-5.3` |
-| 1 | opus | `kimi-k3` | `Opus 4.8` | Moonshot flagship, vision, strongest reasoning |
-| 2 | haiku | `mimo-v2.6-pro` | `Haiku 5.5` | Vision + free cache write; near-haiku positioning |
-
-**All-vision, elite (paid models included)**  -  fills all 5 tiers with the
-strongest vision models on the gateway:
-
-```bash
-.\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" `
-  -Models '[{"name":"claude-opus-4.8","labelOverride":"Opus 4.8"},{"name":"gpt-5.6-sol","labelOverride":"Sonnet 5.5"},{"name":"gemini-3.6-flash","labelOverride":"Haiku 5.5"},{"name":"gpt-5.6-terra","labelOverride":"Fable"},{"name":"gpt-6-astra","labelOverride":"Mythos"}]' `
-  -AuthScheme Bearer -ScrubStale -ResetCaches -Force
-```
-
-| Pos | Tier | `name` | `labelOverride` | Notes |
-|---|---|---|---|---|
-| 0 | sonnet | `gpt-5.6-sol` | `Sonnet 5.5` | GPT-5.6 "Sol"  -  vision, premium reasoning |
-| 1 | opus | `claude-opus-4.8` | `Opus 4.8` | Claude Opus, native to the Claude family |
-| 2 | haiku | `gemini-3.6-flash` | `Haiku 5.5` | Gemini 3.6 Flash  -  vision, fast/cheap |
-| 3 | fable | `gpt-5.6-terra` | `Fable` | GPT-5.6 "Terra"  -  vision, distinct band |
-| 4 | mythos | `gpt-6-astra` | `Mythos` | GPT-6 "Astra"  -  vision flagship |
-
-Other vision models on the gateway you can swap into either recipe:
-`gpt-5.6`, `gpt-5.6-luna`, `gpt-6-luna`, `gemini-3.7-flash`. Prices and
-capability bands vary; check `/v1/models` for the current `supports_vision`
-flag before committing a `name`.
-
-### Native Claude tiers (sonnet→sonnet, opus→opus, haiku→haiku)
-
-The gateway serves the real Claude model ids. This recipe maps each Claude
-model to its own tier with matching labels  -  the safest baseline to retest
-against, because the `name` values are the ones Claude Code expects natively
-and the labels match the tiers:
+The default catalog the script seeds on a pristine install is the native
+3-model Claude pair (Sonnet / Opus / Haiku). This is the recommended baseline:
 
 ```bash
 .\Enable-Claude3P.ps1 -Interactive -NewKey "<YOUR-LLM-KITA-KEY>" `
@@ -360,6 +211,10 @@ and the labels match the tiers:
 | 0 | sonnet | `claude-sonnet-5-5` | `Sonnet 5.5` |
 | 1 | opus | `claude-opus-4.8` | `Opus 4.8` |
 | 2 | haiku | `claude-haiku-5-5` | `Haiku 5.5` |
+
+Subsets work too - pass only the tiers you want. Pass `-Models '[]'` to clear
+the catalog entirely. Omit `-Models` to leave an existing catalog untouched
+(the default 3-model catalog only seeds on pristine installs).
 
 ### Safe retest flow (live probe, no guessing)
 
@@ -428,8 +283,8 @@ sent in API requests (load-bearing  -  a wrong value silently breaks inference);
 `labelOverride` is the UI label only. The result has exactly as many entries as
 you pass  -  other fields (`supports1m`, `isFamilyDefault`, `maxEffort`,
 `anthropicFamilyTier`) fill with defaults if you omit them. `anthropicFamilyTier`
-defaults by position: `sonnet`/`opus`/`haiku`/`fable`/`mythos` for indices 0-4,
-then `sonnet` for index 5+. Passing `-Models` on an install that already has a
+defaults by position: `sonnet`/`opus`/`haiku` for indices 0-2,
+then `sonnet` for index 3+. Passing `-Models` on an install that already has a
 catalog reports the current catalog first, then replaces it. Pass `-Models '[]'`
 to clear the catalog entirely (empty array = valid rebuild target, not omitted).
 Omit `-Models` to leave an existing catalog untouched (the default 3-model

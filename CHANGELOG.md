@@ -6,8 +6,8 @@ does not use semantic versioning; entries are dated and grouped by feature.
 ## 2026-10-12  -  `-Models` parameter (model catalog override)
 
 Added an optional `-Models '<JSON array>'` parameter that lets the user
-present a gateway-served model under a custom UI label (e.g. `name="glm-5.3"`,
-`labelOverride="opus-4.8"`).
+present a gateway-served model under a custom UI label (e.g. `name="claude-sonnet-5-5"`,
+`labelOverride="Sonnet 5.5"`).
 
 ### Added
 - `[string]$Models` parameter with full `.PARAMETER Models` help docs.

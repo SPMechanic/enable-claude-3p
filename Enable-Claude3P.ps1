@@ -38,8 +38,8 @@
     Auth scheme written to inferenceGatewayAuthScheme. Default 'bearer'.
 .PARAMETER Models
     Optional JSON array of inference model entries. Lets you present a
-    gateway-served model under a custom UI label (e.g. name="glm-5.3",
-    labelOverride="opus-4.8"). Each entry MUST have non-empty 'name' and
+    gateway-served model under a custom UI label (e.g. name="claude-sonnet-5-5",
+    labelOverride="Sonnet 5.5"). Each entry MUST have non-empty 'name' and
     'labelOverride'; the other fields (supports1m, isFamilyDefault, maxEffort,
     anthropicFamilyTier) are optional and filled with defaults. Full-rebuild
     semantics: the result array has EXACTLY as many entries as -Models. Passing
@@ -52,7 +52,7 @@
     catalog is never touched. 'name' is the wire model id sent in API requests
     (load-bearing -- a wrong value silently breaks inference); 'labelOverride'
     is UI-only. Example:
-    -Models '[{"name":"glm-5.3","labelOverride":"opus-4.8"},
+    -Models '[{"name":"claude-sonnet-5-5","labelOverride":"Sonnet 5.5"},
     {"name":"claude-haiku-5-5","labelOverride":"Haiku"}]'
     Validation failure (bad JSON or missing name/labelOverride) exits 7.
 .PARAMETER Apply

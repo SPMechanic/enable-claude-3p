@@ -688,10 +688,10 @@ Expect 'GitBash detected on this machine' $gb $true
 # helper -- mandatory name+labelOverride, optional fields filled by position.
 # ---------------------------------------------------------------------------
 # Valid 2-entry array: user fields verbatim + missing fields filled by position.
-$r = Resolve-InferenceModels -ModelsJson '[{"name":"glm-5.3","labelOverride":"opus-4.8"},{"name":"claude-haiku-5-5","labelOverride":"Haiku"}]'
+$r = Resolve-InferenceModels -ModelsJson '[{"name":"claude-sonnet-5-5","labelOverride":"Sonnet 5.5"},{"name":"claude-haiku-5-5","labelOverride":"Haiku"}]'
 Expect 'rim 2-entry count' ($r.Count) '2'
-Expect 'rim entry0 name verbatim' ($r[0]['name']) 'glm-5.3'
-Expect 'rim entry0 label verbatim' ($r[0]['labelOverride']) 'opus-4.8'
+Expect 'rim entry0 name verbatim' ($r[0]['name']) 'claude-sonnet-5-5'
+Expect 'rim entry0 label verbatim' ($r[0]['labelOverride']) 'Sonnet 5.5'
 Expect 'rim entry0 tier by-position sonnet' ($r[0]['anthropicFamilyTier']) 'sonnet'
 Expect 'rim entry0 supports1m defaulted' ($r[0]['supports1m']) 'False'
 Expect 'rim entry0 isFamilyDefault defaulted' ($r[0]['isFamilyDefault']) 'True'
@@ -701,7 +701,7 @@ Expect 'rim entry1 label verbatim' ($r[1]['labelOverride']) 'Haiku'
 Expect 'rim entry1 tier by-position opus' ($r[1]['anthropicFamilyTier']) 'opus'
 
 # Single entry, only mandatory fields -> all 4 non-mandatory defaulted.
-$r = Resolve-InferenceModels -ModelsJson '[{"name":"glm-5.3","labelOverride":"opus-4.8"}]'
+$r = Resolve-InferenceModels -ModelsJson '[{"name":"claude-sonnet-5-5","labelOverride":"Sonnet 5.5"}]'
 Expect 'rim 1-entry count' ($r.Count) '1'
 Expect 'rim single tier sonnet' ($r[0]['anthropicFamilyTier']) 'sonnet'
 Expect 'rim single supports1m false' ($r[0]['supports1m']) 'False'
@@ -750,12 +750,12 @@ Expect 'rim invalid json throws' $threw 'True'
 # Write-GatewayConfigEntry with -ResolvedModels: full rebuild replaces existing.
 $trm = Join-Path $env:TEMP ('test_models_' + [guid]::NewGuid().ToString('N') + '.json')
 '{"inferenceModels":[{"name":"old-model","labelOverride":"Old"}]}' | Out-File $trm -Encoding utf8
-$custom = Resolve-InferenceModels -ModelsJson '[{"name":"glm-5.3","labelOverride":"opus-4.8"}]'
+$custom = Resolve-InferenceModels -ModelsJson '[{"name":"claude-sonnet-5-5","labelOverride":"Sonnet 5.5"}]'
 $null = Write-GatewayConfigEntry -Path $trm -BaseUrl 'https://gw.example/' -ApiKey 'k' -AuthScheme 'bearer' -ResolvedModels $custom -ModelsSupplied $true
 $written = [System.IO.File]::ReadAllText($trm) | ConvertFrom-Json
 Expect 'wge -Models rebuilds count' (@($written.inferenceModels).Count) '1'
-Expect 'wge -Models rebuilds name' ($written.inferenceModels[0].name) 'glm-5.3'
-Expect 'wge -Models rebuilds label' ($written.inferenceModels[0].labelOverride) 'opus-4.8'
+Expect 'wge -Models rebuilds name' ($written.inferenceModels[0].name) 'claude-sonnet-5-5'
+Expect 'wge -Models rebuilds label' ($written.inferenceModels[0].labelOverride) 'Sonnet 5.5'
 Expect 'wge -Models rebuilds tier filled' ($written.inferenceModels[0].anthropicFamilyTier) 'sonnet'
 Expect 'wge -Models old catalog gone' ($written.inferenceModels[0].name -eq 'old-model') 'False'
 Remove-Item -Force $trm -ErrorAction SilentlyContinue
