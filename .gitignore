@@ -1,0 +1,12 @@
+# The entire _archive/ folder is excluded - it contains superseded v1 code
+# AND credential-bearing files (live API keys, real machineID in plaintext).
+# Never commit any of it, even to a private repo.
+_archive/
+
+# Local Claude settings
+.claude/settings.local.json
+
+# OS / editor noise
+Thumbs.db
+*.suo
+*.user
