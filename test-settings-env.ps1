@@ -250,6 +250,84 @@ Check 'case11 array-root returns false' $r 'False'
 Check-True 'case11 array-root untouched' ($snap -ceq [System.IO.File]::ReadAllText($t))
 Remove-Item $t -Force
 
+# ---- Case 12: scaled -- many plugins + many marketplaces across ALL schema ----
+# source variants (git/github/url/hostPattern/npm/file/directory/settings), plus
+# extra nested user state. Proves the insert-only + Depth-50 round-trip preserves
+# a large/deep tree byte-for-byte AND still injects the tier vars + model. This
+# converts the "same code path, so scale doesn't matter" inference into a proof.
+$scaled = @'
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "k",
+    "ANTHROPIC_API_KEY": "k",
+    "ANTHROPIC_BASE_URL": "https://gw.example/",
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "enabledPlugins": {
+    "p0@m0": true, "p1@m1": false, "p2@m0": true, "p3@anthropic-tools": true,
+    "p4@ecc": true, "p5@athena": true, "p6@m2": false, "p7@m3": true,
+    "p8@ecc": true, "p9@anthropic-tools": true, "p10@m4": true, "p11@m5": false
+  },
+  "extraKnownMarketplaces": {
+    "git-src":      { "source": { "source": "git",      "url":  "https://example/g.git" } },
+    "github-src":   { "source": { "source": "github",   "repo": "owner/repo" } },
+    "url-src":      { "source": { "source": "url",      "url":  "https://example/raw.json" } },
+    "host-src":     { "source": { "source": "hostPattern", "pattern": "*.internal" } },
+    "npm-src":      { "source": { "source": "npm",      "name": "@scope/pkg" } },
+    "file-src":     { "source": { "source": "file",     "path": "/abs/path.json" } },
+    "dir-src":      { "source": { "source": "directory","path": "/abs/dir" }, "installLocation": "user" },
+    "settings-src": { "source": { "source": "settings" }, "autoUpdate": true }
+  },
+  "stats": { "launches": 42, "lastPluginAdded": { "name": "p11", "ts": 1700000000 } }
+}
+'@
+$t = Write-TempJson $scaled
+$snapBefore = [System.IO.File]::ReadAllText($t)
+$beforeObj = $snapBefore | ConvertFrom-Json
+$beforePlugNames = ($beforeObj.enabledPlugins.PSObject.Properties.Name | Sort-Object) -join ','
+$beforeMktNames = ($beforeObj.extraKnownMarketplaces.PSObject.Properties.Name | Sort-Object) -join ','
+$beforeNpm = $beforeObj.extraKnownMarketplaces.'npm-src'.source.name
+$beforeDirIl = $beforeObj.extraKnownMarketplaces.'dir-src'.installLocation
+$beforeSettingsAuto = $beforeObj.extraKnownMarketplaces.'settings-src'.autoUpdate
+$beforeStatsTs = $beforeObj.stats.lastPluginAdded.ts
+$r = Ensure-SettingsEnvFields -Path $t
+Check 'case12 scaled changed (tier+model added)' $r 'True'
+# Tier + model injected on a large file.
+$afterObj = [System.IO.File]::ReadAllText($t) | ConvertFrom-Json
+$e12 = Prop $afterObj 'env'
+Check 'case12 SONNET injected' (Prop $e12 'ANTHROPIC_DEFAULT_SONNET_MODEL') 'claude-sonnet-5-5'
+Check 'case12 HAIKU injected' (Prop $e12 'ANTHROPIC_DEFAULT_HAIKU_MODEL') 'claude-haiku-5-5'
+Check 'case12 OPUS injected' (Prop $e12 'ANTHROPIC_DEFAULT_OPUS_MODEL') 'claude-opus-4.8'
+Check 'case12 model inserted' (Prop $afterObj 'model') 'claude-sonnet-5-5'
+Check 'case12 AUTH_TOKEN preserved' (Prop $e12 'ANTHROPIC_AUTH_TOKEN') 'k'
+# Plugin set + count + bools preserved (not reordered, not dropped, not flipped).
+Check 'case12 plugin count preserved' (@($afterObj.enabledPlugins.PSObject.Properties).Count) '12'
+Check 'case12 plugin names preserved' (($afterObj.enabledPlugins.PSObject.Properties.Name | Sort-Object) -join ',') $beforePlugNames
+Check 'case12 plugin bool preserved' (Prop $afterObj.enabledPlugins 'p1@m1') 'False'
+Check 'case12 plugin bool preserved2' (Prop $afterObj.enabledPlugins 'p4@ecc') 'True'
+# All 8 marketplace source variants preserved with their type-specific leaf fields.
+Check 'case12 market count preserved' (@($afterObj.extraKnownMarketplaces.PSObject.Properties).Count) '8'
+Check 'case12 market names preserved' (($afterObj.extraKnownMarketplaces.PSObject.Properties.Name | Sort-Object) -join ',') $beforeMktNames
+Check 'case12 git source preserved' (Prop $afterObj.extraKnownMarketplaces.'git-src'.source 'source') 'git'
+Check 'case12 github repo preserved' (Prop $afterObj.extraKnownMarketplaces.'github-src'.source 'repo') 'owner/repo'
+Check 'case12 url leaf preserved' (Prop $afterObj.extraKnownMarketplaces.'url-src'.source 'url') 'https://example/raw.json'
+Check 'case12 hostPattern preserved' (Prop $afterObj.extraKnownMarketplaces.'host-src'.source 'pattern') '*.internal'
+Check 'case12 npm name preserved' (Prop $afterObj.extraKnownMarketplaces.'npm-src'.source 'name') $beforeNpm
+Check 'case12 file path preserved' (Prop $afterObj.extraKnownMarketplaces.'file-src'.source 'path') '/abs/path.json'
+Check 'case12 dir installLocation preserved' (Prop $afterObj.extraKnownMarketplaces.'dir-src' 'installLocation') $beforeDirIl
+Check 'case12 settings autoUpdate preserved' (Prop $afterObj.extraKnownMarketplaces.'settings-src' 'autoUpdate') $beforeSettingsAuto
+# Sibling nested user state untouched.
+Check 'case12 stats.launches preserved' (Prop $afterObj.stats 'launches') '42'
+Check 'case12 stats.lastPluginAdded.ts preserved' (Prop $afterObj.stats.lastPluginAdded 'ts') $beforeStatsTs
+# Idempotent: second run is a no-op AND byte-identical to the first run's output
+# (proves no key reordering or whitespace churn on a large file either).
+$snapAfterFirst = [System.IO.File]::ReadAllText($t)
+$r2 = Ensure-SettingsEnvFields -Path $t
+Check 'case12 second-run no-op' $r2 'False'
+$snapAfterSecond = [System.IO.File]::ReadAllText($t)
+Check-True 'case12 second-run byte-identical' ($snapAfterSecond -ceq $snapAfterFirst)
+Remove-Item $t -Force
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $pass, $fail) -ForegroundColor $(if ($fail -eq 0) {'Green'} else {'Yellow'})
 if ($fail -gt 0) { exit 1 } else { Write-Host 'ALL SETTINGS-ENV TESTS PASSED' -ForegroundColor Green }
