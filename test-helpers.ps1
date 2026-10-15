@@ -172,13 +172,22 @@ function Resolve-InferenceModels {
     $parsed = $null
     try { $parsed = $ModelsJson | ConvertFrom-Json }
     catch { throw "-Models is not valid JSON: $($_.Exception.Message)" }
-    if ($null -eq $parsed -or -not ($parsed -is [System.Array])) {
+    # Detect array-wrapping at the JSON-text level: ConvertFrom-Json unwraps a
+    # 1-element array to a bare PSCustomObject, so a post-parse `-is [Array]`
+    # check would falsely reject a valid single-model catalog. A bare object
+    # is not array-wrapped and must be rejected.
+    $firstNonWs = -1
+    for ($c = 0; $c -lt $ModelsJson.Length; $c++) {
+        if (-not [char]::IsWhiteSpace($ModelsJson[$c])) { $firstNonWs = $c; break }
+    }
+    if ($firstNonWs -lt 0 -or $ModelsJson[$firstNonWs] -ne '[') {
         throw "-Models must be a JSON array."
     }
+    $entries = if ($null -eq $parsed) { @() } else { @($parsed) }
     $tiers = @('sonnet', 'opus', 'haiku', 'fable', 'mythos')
     $result = New-Object System.Collections.Generic.List[object]
     $i = 0
-    foreach ($entry in $parsed) {
+    foreach ($entry in $entries) {
         if ($null -eq $entry -or -not ($entry -is [System.Management.Automation.PSCustomObject])) {
             throw "-Models[$i] must be a JSON object."
         }
