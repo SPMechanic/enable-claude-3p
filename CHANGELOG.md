@@ -3,6 +3,77 @@
 Notable changes to `Enable-Claude3P.ps1` and its test harness. This project
 does not use semantic versioning; entries are dated and grouped by feature.
 
+## 2026-10-15  -  single-element `-Models` fix, validator repair, scaled harness, README tutorial
+
+A focused session on the `Resolve-InferenceModels` crash and the no-`settings.json`
+test surface, ending with a README redesign. 6 commits (`9bce883`..`fbba099`).
+
+### Fixed
+- **`Resolve-InferenceModels` falsely rejected a 1-element `-Models` array
+  (HIGH).** `ConvertFrom-Json` unwraps a 1-element JSON array to a bare
+  `PSCustomObject`, so the post-parse `-is [System.Array]` guard threw
+  "-Models must be a JSON array" for a valid single-model catalog. The 2+
+  element cases passed by luck (arrays of >=2 stay arrays). **This was a
+  production bug**, not just a test artifact: a user passing
+  `-Models '[{...one model...}]'` on the real CLI would exit 7 for a valid
+  catalog. Fix: detect array-wrapping at the JSON-text level (first
+  non-whitespace char must be `[`), then normalize with `@($parsed)` to
+  re-wrap the unwrapped single element. Bare objects (`{"name":...}`, not
+  array-wrapped) still throw. Empty `[]` and multi-element arrays unchanged.
+  Same fix applied to the `test-helpers.ps1` mirror.
+- **`validate-template.ps1` had a dead hardcoded path (MEDIUM).** It pointed
+  at `C:\CLAUDE\plugins\enable-claude-3p\Enable-Claude3P.ps1` — a path that
+  no longer exists — so it failed at parse time and silently never ran. Fixed
+  to resolve via `$PSScriptRoot` so it works from any CWD.
+- **`validate-template.ps1` under-asserted the pristine template (MEDIUM).**
+  Even with the path fixed, it only checked 5 fields (GIT_BASH_PATH, env key
+  count, allow count, defaultMode, defaultShell, outputStyle) — NOT the three
+  `ANTHROPIC_DEFAULT_*_MODEL` tier vars, NOT the top-level `model` field, NOT
+  `model != "auto"`. Since `Ensure-SettingsEnvFields` only runs on EXISTING
+  files, a tier var dropped from the pristine template would ship uncaught.
+  Added 6 assertions: SONNET/HAIKU/OPUS tier vars present, `model` field
+  present, `model == claude-sonnet-5-5` (not the legacy `auto` alias),
+  `enableWorkflows`. Validator now 12/12.
+
+### Added
+- **`test-settings-env.ps1` Case 12 — scaled nesting fixture.** The harness
+  only exercised a 4-plugin / 2-marketplace file. Case 12 adds a 12-plugin
+  (mixed booleans) + 8-marketplace fixture spanning every schema-permitted
+  `source` variant (`git`/`github`/`url`/`hostPattern`/`npm`/`file`/
+  `directory`/`settings`) with their type-specific leaf fields, plus a
+  sibling nested `stats` object. Asserts tier-var + model injection still
+  fires, every plugin/marketplace leaf survives, sibling state untouched, and
+  a second run is byte-identical to the first. Converts the "same code path,
+  so scale doesn't matter" inference into a proof. (Also caught and fixed a
+  self-comparison typo in the byte-identical assertion that would have
+  claimed coverage it didn't provide.)
+- **README: "Resulting files: both scenarios" section.** Exact `settings.json`
+  + `.claude.json` for (A) pristine-no-files and (B) both-exist, with a
+  field-by-field injection table and cross-file guarantees.
+- **README: "Recommended: full hygiene key rotation" quickstart.** Step-by-step
+  (quit → manual backup → conservative or clean-baseline path with full scrub
+  flags → restart + log check).
+- **README: tutorial redesign.** Restructured the reference-first doc into a
+  tutorial-first journey with badges, emoji, callouts, and collapsible
+  `<details>` sections for reference content.
+
+### Changed
+- `test-settings-env.ps1`: 46 -> 70 assertions (12 cases). All PASS.
+- `README.md` §11 (test inventory) and §12 (tested scenarios) aligned with
+  the current harness surface.
+- `SUMMARY.md`: fixed stale file-inventory path (`C:\CLAUDE\plugins\...` ->
+  `C:\CLAUDE\Enable-Claude3P-v1.1\`).
+
+### Corrected (stale claim in a prior entry)
+- The `2026-10-12 audit-driven hardening` entry's "Non-issues" section
+  asserted that single-element `-Models '[{...}]'` was safe in PS 5.1 —
+  claiming `ConvertFrom-Json` returns an `Object[]` of count 1 with no unwrap.
+  **That claim was wrong.** This session reproduced the unwrap: a 1-element
+  array comes back as a bare `PSCustomObject`, the `-is [System.Array]` check
+  fails, and `Resolve-InferenceModels` exits 7. The fix above (JSON-text-level
+  array detection + `@()` normalization) resolves it. The prior "non-issue"
+  note is retained for history but should be read as superseded by this fix.
+
 ## 2026-10-12  -  `-Models` parameter (model catalog override)
 
 Added an optional `-Models '<JSON array>'` parameter that lets the user
