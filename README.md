@@ -241,6 +241,73 @@ first if you're unsure what state your machine is in.
 .\Enable-Claude3P.ps1
 ```
 
+### Recommended: full hygiene key rotation (the "scrub everything" path)
+
+Use this when you're rotating to a new key and want stale copies of the old
+key purged from disk, the registry, and caches  -  the most thorough refresh.
+**Two precautionary steps first, then the apply.**
+
+**0. Fully quit Claude Desktop AND the Claude Code CLI first.** Not minimized
+or in the tray  -  actually exited (check Task Manager for `Claude.exe`,
+`claude`, and any `node` CLI processes). The env vars and credential files
+are read at launch, not on the fly, so a running app won't pick up the new key
+and can hold file handles that produce partial writes.
+
+```bash
+Get-Process Claude, claude -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
+**1. Back up both files by hand (precaution).** The script writes a `.bak`
+next to every file it touches, but for a destructive rotation make your own
+copy of the two files that matter most, in a folder you control, *before*
+running anything. If `settings.json` / `.claude.json` are currently intact
+and working, this is your rollback anchor:
+
+```bash
+$stamp = Get-Date -Format yyyyMMdd-HHmmss
+Copy-Item "$env:USERPROFILE\.claude\settings.json" "$env:USERPROFILE\settings.json.backup-$stamp"
+Copy-Item "$env:USERPROFILE\.claude.json"     "$env:USERPROFILE\.claude.json.backup-$stamp"
+```
+
+(If a file doesn't exist yet, the copy step errors harmlessly  -  skip it.)
+
+**2. Choose one of the two paths below.**
+
+**Path A  -  conservative (keep your current config, just rotate + scrub).**
+Keeps your existing `enabledPlugins` / `extraKnownMarketplaces` / `permissions`
+/ `model` untouched; only the key, URL, tier vars, and onboarding flags are
+synced, stale old-key copies are overwritten, and caches are cleared:
+
+```bash
+.\Enable-Claude3P.ps1 -Apply -NewKey "<NEW-KEY>" -AuthScheme Bearer `
+  -ScrubStale -ScrubEnv -ResetCaches -Force
+```
+
+**Path B  -  clean baseline (Restore first, then fresh apply).** Use this if
+your config is in an unknown state, or you want a guaranteed-clean slate.
+`-Restore` wipes everything 3P-related (deploymentMode, gateway entry,
+_meta.json, CLI gateway fields, the seeded onboarding bools) preserving your
+`.bak` files, then you re-apply fresh. **Restore removes your working 3P
+setup**  -  that's the point, but it's why step 1's manual backup matters:
+
+```bash
+.\Enable-Claude3P.ps1 -Restore -Apply -Force
+.\Enable-Claude3P.ps1 -Apply -NewKey "<NEW-KEY>" -AuthScheme Bearer `
+  -ScrubStale -ScrubEnv -ResetCaches -Force
+```
+
+**3. Restart Claude Desktop and the CLI.** Launch them fresh so they re-read
+the env vars and credential files. Then confirm the newest log shows no setup
+window and no credential rejection:
+
+```bash
+Get-Content "$env:LOCALAPPDATA\Claude-3p\logs\main.log" -Tail 200 |
+  Select-String 'Opening 3P setup window|credential rejected'
+```
+
+No output = clean. If you see `credential rejected`, your key or base URL is
+wrong  -  re-run the audit (`.\Enable-Claude3P.ps1`) to see current state.
+
 ### CI / automation (non-interactive)
 ```bash
 .\Enable-Claude3P.ps1 -Apply -NewKey "<KEY>" -Force
