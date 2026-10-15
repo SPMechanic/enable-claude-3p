@@ -21,7 +21,7 @@ check-and-fill (non-destructive), and supports `-Apply` / `-Interactive` /
 `-Restore` / dry-run modes (dry-run is the default when none of those is
 passed).
 
-### File inventory  -  `C:\CLAUDE\plugins\enable-claude-3p\`
+### File inventory  -  `C:\CLAUDE\Enable-Claude3P-v1.1\`
 
 | Path | Role |
 |---|---|
