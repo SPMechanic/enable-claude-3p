@@ -594,10 +594,21 @@ function Ensure-SettingsEnvFields {
     $obj = $null
     try { $obj = $raw | ConvertFrom-Json } catch { return $false }
     if (-not $obj) { return $false }
+    # Guard against non-object JSON (array/scalar). Add-Member on an array raises
+    # "member already exists" / corrupts structure -- the app always writes an
+    # object root, so anything else is damage we refuse to touch. Mirrors the
+    # guard in Set-ClaudeStateOnboarding.
+    if (-not ($obj -is [System.Management.Automation.PSCustomObject])) { return $false }
 
-    # Ensure an env object exists.
+    # Ensure an env object exists. MUST be a PSCustomObject (not an ordered
+    # hashtable): Add-Member -NoteProperty adds to .PSObject.Properties on either
+    # type, but ConvertTo-Json serializes a hashtable's NATIVE entries only and
+    # silently drops the NoteProperty members. That made a pristine {} file lose
+    # every injected env var on rewrite -- the "JSON becomes corrupt" symptom.
+    # A PSCustomObject has no native entries, so NoteProperty members ARE the
+    # serialized output.
     if (-not ($obj.PSObject.Properties['env'])) {
-        $obj | Add-Member -MemberType NoteProperty -Name 'env' -Value ([ordered]@{})
+        $obj | Add-Member -MemberType NoteProperty -Name 'env' -Value ([PSCustomObject]@{})
     }
     $envObj = $obj.env
     $added = $false
@@ -615,12 +626,31 @@ function Ensure-SettingsEnvFields {
         'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC' = '1'
         'CLAUDE_CODE_USE_POWERSHELL_TOOL'      = '1'
         'ENABLE_TOOL_SEARCH'                   = 'true'
+        'ANTHROPIC_DEFAULT_SONNET_MODEL'       = 'claude-sonnet-5-5'
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL'        = 'claude-haiku-5-5'
+        'ANTHROPIC_DEFAULT_OPUS_MODEL'         = 'claude-opus-4.8'
     }
     foreach ($k in $universal.Keys) {
         if (-not ($envObj.PSObject.Properties[$k])) {
             $envObj | Add-Member -MemberType NoteProperty -Name $k -Value $universal[$k]
             $added = $true
         }
+    }
+    # Default model: the pristine template pins "claude-sonnet-5-5" (the CLI's
+    # session-default model id). "auto" is NOT a documented settings.json model
+    # alias (code.claude.com/docs/en/settings-reference: the field accepts a tier
+    # alias or a full id; "auto" appears only as an effortLevel / Bedrock toggle).
+    # An older version of this script wrote "model":"auto" -- fix that legacy value,
+    # and INSERT the field when absent. A user-set model id (anything other than
+    # "auto") is preserved verbatim.
+    $modelProp = $obj.PSObject.Properties['model']
+    if (-not $modelProp) {
+        $obj | Add-Member -MemberType NoteProperty -Name 'model' -Value 'claude-sonnet-5-5'
+        $added = $true
+    }
+    elseif ($modelProp.Value -ceq 'auto') {
+        $obj.model = 'claude-sonnet-5-5'
+        $added = $true
     }
     if (-not $added) { return $false }
     # Back up the PRE-WRITE content before overwriting. Doing this here (not in
@@ -1121,7 +1151,10 @@ if ($SyncCli) {
             '    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",' + "`n" +
             '    "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe",' + "`n" +
             '    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",' + "`n" +
-            '    "ENABLE_TOOL_SEARCH": "true"' + "`n" +
+            '    "ENABLE_TOOL_SEARCH": "true",' + "`n" +
+            '    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5",' + "`n" +
+            '    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-5-5",' + "`n" +
+            '    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.8"' + "`n" +
             '  },' + "`n" +
             '  "permissions": {' + "`n" +
             '    "defaultMode": "bypassPermissions",' + "`n" +
@@ -1130,7 +1163,7 @@ if ($SyncCli) {
             '      "Bash(git add *)", "Bash(git commit *)", "Bash(git status *)", "Bash(git log *)", "Bash(git diff *)", "Bash(git rm *)", "Bash(git mv *)", "Bash(git stash *)", "Bash(git branch *)", "Bash(git checkout *)", "Bash(git restore *)", "Bash(git fetch *)", "Bash(git pull *)", "Bash(git merge *)", "Bash(git ls-files *)", "Bash(git show *)"' + "`n" +
             '    ]' + "`n" +
             '  },' + "`n" +
-            '  "model": "auto",' + "`n" +
+            '  "model": "claude-sonnet-5-5",' + "`n" +
             '  "enableWorkflows": true,' + "`n" +
             '  "defaultShell": "powershell",' + "`n" +
             '  "outputStyle": "Concise"' + "`n" +

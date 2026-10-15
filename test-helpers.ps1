@@ -60,8 +60,9 @@ function Ensure-SettingsEnvFields {
     $obj = $null
     try { $obj = $raw | ConvertFrom-Json } catch { return $false }
     if (-not $obj) { return $false }
+    if (-not ($obj -is [System.Management.Automation.PSCustomObject])) { return $false }
     if (-not ($obj.PSObject.Properties['env'])) {
-        $obj | Add-Member -MemberType NoteProperty -Name 'env' -Value ([ordered]@{})
+        $obj | Add-Member -MemberType NoteProperty -Name 'env' -Value ([PSCustomObject]@{})
     }
     $envObj = $obj.env
     $added = $false
@@ -76,11 +77,23 @@ function Ensure-SettingsEnvFields {
         'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC' = '1'
         'CLAUDE_CODE_USE_POWERSHELL_TOOL' = '1'
         'ENABLE_TOOL_SEARCH' = 'true'
+        'ANTHROPIC_DEFAULT_SONNET_MODEL' = 'claude-sonnet-5-5'
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL' = 'claude-haiku-5-5'
+        'ANTHROPIC_DEFAULT_OPUS_MODEL' = 'claude-opus-4.8'
     }
     foreach ($k in $universal.Keys) {
         if (-not ($envObj.PSObject.Properties[$k])) {
             $envObj | Add-Member -MemberType NoteProperty -Name $k -Value $universal[$k]; $added = $true
         }
+    }
+    # Default model: insert if absent; fix legacy "auto" -> claude-sonnet-5-5;
+    # preserve any other user-set model id.
+    $modelProp = $obj.PSObject.Properties['model']
+    if (-not $modelProp) {
+        $obj | Add-Member -MemberType NoteProperty -Name 'model' -Value 'claude-sonnet-5-5'; $added = $true
+    }
+    elseif ($modelProp.Value -ceq 'auto') {
+        $obj.model = 'claude-sonnet-5-5'; $added = $true
     }
     if (-not $added) { return $false }
     $null = Backup-File $Path
@@ -818,6 +831,141 @@ Remove-Item -Force $trm7 -ErrorAction SilentlyContinue
 $big = Resolve-InferenceModels -ModelsJson '[{"name":"a","labelOverride":"A"},{"name":"b","labelOverride":"B"},{"name":"c","labelOverride":"C"},{"name":"d","labelOverride":"D"},{"name":"e","labelOverride":"E"}]'
 Expect 'rim idx3 tier fable' ($big[3].anthropicFamilyTier) 'fable'
 Expect 'rim idx4 tier mythos' ($big[4].anthropicFamilyTier) 'mythos'
+
+# ---------------------------------------------------------------------------
+# Regression: a settings.json with NESTED plugin/marketplace structures (the
+# real-world shape once installed plugins are present) must survive the
+# Ensure-SettingsEnvFields parse/merge/serialize round-trip intact. This is the
+# "the json when re-edited by script become corrupt" failure mode: if the
+# round-trip flattened, truncated, or reordered the nested trees, the app would
+# lose its plugin registration on the next apply. Shape taken from a real
+# ~/.claude/settings.json carrying enabledPlugins + extraKnownMarketplaces.
+# ---------------------------------------------------------------------------
+$realShape = @'
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "nr-iots-realkeyvalue",
+    "ANTHROPIC_API_KEY": "nr-iots-realkeyvalue",
+    "ANTHROPIC_BASE_URL": "https://chat-api.llm-kita.com/",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
+    "ENABLE_TOOL_SEARCH": "true"
+  },
+  "enabledPlugins": {
+    "ecc@ecc": true,
+    "security-guidance@claude-plugins-official": true,
+    "claude-security@claude-plugins-official": true,
+    "athena@athena": true
+  },
+  "extraKnownMarketplaces": {
+    "ecc": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/affaan-m/ECC.git"
+      }
+    },
+    "athena": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/SPMechanic/athena-dev.git"
+      }
+    }
+  }
+}
+'@
+$treal = Join-Path $env:TEMP ('test_real_shape_' + [guid]::NewGuid().ToString('N') + '.json')
+$realShape | Out-File $treal -Encoding utf8
+
+# Snapshot the nested trees BEFORE the rewrite so we can diff them AFTER.
+$beforeObj = [System.IO.File]::ReadAllText($treal) | ConvertFrom-Json
+$beforePlugins = ($beforeObj.enabledPlugins.PSObject.Properties.Name | Sort-Object) -join ','
+$beforeEccUrl = $beforeObj.extraKnownMarketplaces.ecc.source.url
+$beforeAthenaUrl = $beforeObj.extraKnownMarketplaces.athena.source.url
+$beforePluginCount = @($beforeObj.enabledPlugins.PSObject.Properties).Count
+$beforeMarketCount = @($beforeObj.extraKnownMarketplaces.PSObject.Properties).Count
+# env should already have the 5 universal keys but NOT the tier vars.
+$beforeTierAbsent = (-not $beforeObj.env.PSObject.Properties['ANTHROPIC_DEFAULT_SONNET_MODEL'])
+
+$r = Ensure-SettingsEnvFields -Path $treal
+Expect 'real-shape inject changed (tier vars added)' $r $true
+# The rewritten file MUST re-parse as valid JSON -- corruption manifests as a
+# parse failure or a flattened structure that no longer carries the trees.
+$afterObj = $null
+$afterOk = $true
+try { $afterObj = [System.IO.File]::ReadAllText($treal) | ConvertFrom-Json }
+catch { $afterOk = $false }
+Expect 'real-shape re-parse valid JSON' $afterOk 'True'
+
+# Nested plugin tree preserved verbatim (no loss, no reorder of membership).
+$afterPlugins = ($afterObj.enabledPlugins.PSObject.Properties.Name | Sort-Object) -join ','
+Expect 'real-shape enabledPlugins preserved' $afterPlugins $beforePlugins
+Expect 'real-shape plugin count preserved' (@($afterObj.enabledPlugins.PSObject.Properties).Count) $beforePluginCount
+Expect 'real-shape ecc plugin bool preserved' ($afterObj.enabledPlugins.'ecc@ecc') 'True'
+Expect 'real-shape athena plugin bool preserved' ($afterObj.enabledPlugins.'athena@athena') 'True'
+
+# Nested marketplace tree preserved verbatim, including the 3-level source.url leaf.
+Expect 'real-shape market count preserved' (@($afterObj.extraKnownMarketplaces.PSObject.Properties).Count) $beforeMarketCount
+Expect 'real-shape ecc nested url preserved' ($afterObj.extraKnownMarketplaces.ecc.source.url) $beforeEccUrl
+Expect 'real-shape athena nested url preserved' ($afterObj.extraKnownMarketplaces.athena.source.url) $beforeAthenaUrl
+Expect 'real-shape ecc source.source preserved' ($afterObj.extraKnownMarketplaces.ecc.source.source) 'git'
+
+# The three tier-mapping vars were injected (the actual gap on the user's file).
+Expect 'real-shape SONNET tier injected' ($afterObj.env.ANTHROPIC_DEFAULT_SONNET_MODEL) 'claude-sonnet-5-5'
+Expect 'real-shape HAIKU tier injected' ($afterObj.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) 'claude-haiku-5-5'
+Expect 'real-shape OPUS tier injected' ($afterObj.env.ANTHROPIC_DEFAULT_OPUS_MODEL) 'claude-opus-4.8'
+
+# Default model field: the real-shape file has NO top-level "model" key, so it
+# must be INSERTED as claude-sonnet-5-5 (the CLI session-default wire id).
+Expect 'real-shape model field inserted' ($afterObj.model) 'claude-sonnet-5-5'
+Expect 'real-shape model field was absent before' $beforeTierAbsent 'True'
+
+# Existing env values the user already set MUST be preserved (never clobbered).
+Expect 'real-shape AUTH_TOKEN preserved' ($afterObj.env.ANTHROPIC_AUTH_TOKEN) 'nr-iots-realkeyvalue'
+Expect 'real-shape BASE_URL preserved' ($afterObj.env.ANTHROPIC_BASE_URL) 'https://chat-api.llm-kita.com/'
+
+# Idempotent: a second run is a no-op ($false) -- the tier vars are now present,
+# so nothing is added, and the file content is byte-identical (no stacked .bak).
+$r2 = Ensure-SettingsEnvFields -Path $treal
+Expect 'real-shape second run no-op' $r2 'False'
+
+# Idempotency content check: second run must not have changed a single byte.
+$snap2 = [System.IO.File]::ReadAllText($treal)
+$r3 = Ensure-SettingsEnvFields -Path $treal
+$snap3 = [System.IO.File]::ReadAllText($treal)
+Expect 'real-shape third run byte-identical' ($snap2 -ceq $snap3) 'True'
+
+Remove-Item $treal -Force -ErrorAction SilentlyContinue
+
+# Regression: a user who already set a custom tier var (e.g. pinned Opus to a
+# different id) must NOT be overwritten by the universal default. Only-if-absent.
+$tierCustom = Join-Path $env:TEMP ('test_tier_custom_' + [guid]::NewGuid().ToString('N') + '.json')
+'{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus-4-custom"}}' | Out-File $tierCustom -Encoding utf8
+$null = Ensure-SettingsEnvFields -Path $tierCustom
+$tierAfter = [System.IO.File]::ReadAllText($tierCustom) | ConvertFrom-Json
+Expect 'tier custom OPUS NOT clobbered' ($tierAfter.env.ANTHROPIC_DEFAULT_OPUS_MODEL) 'claude-opus-4-custom'
+Expect 'tier custom SONNET added (was absent)' ($tierAfter.env.ANTHROPIC_DEFAULT_SONNET_MODEL) 'claude-sonnet-5-5'
+Remove-Item $tierCustom -Force -ErrorAction SilentlyContinue
+
+# Legacy "model":"auto" (the broken value the old pristine template wrote) must
+# be rewritten to claude-sonnet-5-5. "auto" is not a documented settings.json
+# model alias -- this is the exact regression the user reported.
+$tAuto = Join-Path $env:TEMP ('test_model_auto_' + [guid]::NewGuid().ToString('N') + '.json')
+'{"env":{"ANTHROPIC_API_KEY":"k"},"model":"auto"}' | Out-File $tAuto -Encoding utf8
+$rAuto = Ensure-SettingsEnvFields -Path $tAuto
+Expect 'model-auto rewrite changed' $rAuto $true
+$tAutoAfter = [System.IO.File]::ReadAllText($tAuto) | ConvertFrom-Json
+Expect 'model-auto fixed to sonnet-5-5' ($tAutoAfter.model) 'claude-sonnet-5-5'
+Remove-Item $tAuto -Force -ErrorAction SilentlyContinue
+
+# A user-set custom model id must be PRESERVED (not forced to sonnet-5-5).
+$tCustModel = Join-Path $env:TEMP ('test_model_custom_' + [guid]::NewGuid().ToString('N') + '.json')
+'{"env":{"ANTHROPIC_API_KEY":"k"},"model":"claude-opus-4.8"}' | Out-File $tCustModel -Encoding utf8
+$null = Ensure-SettingsEnvFields -Path $tCustModel
+$tCustAfter = [System.IO.File]::ReadAllText($tCustModel) | ConvertFrom-Json
+Expect 'model custom NOT clobbered' ($tCustAfter.model) 'claude-opus-4.8'
+Remove-Item $tCustModel -Force -ErrorAction SilentlyContinue
 
 if ($fail -eq 0) { Write-Host ''; Write-Host 'ALL TESTS PASSED' -ForegroundColor Green }
 else { Write-Host ''; Write-Host "$fail FAILURES" -ForegroundColor Red }

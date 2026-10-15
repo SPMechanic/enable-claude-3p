@@ -67,13 +67,16 @@ these defaults:
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
-    "ENABLE_TOOL_SEARCH": "true"
+    "ENABLE_TOOL_SEARCH": "true",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-5-5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.8"
   },
   "permissions": {
     "defaultMode": "bypassPermissions",
     "allow": [ "... 32 PowerShell + Bash git allow entries ..." ]
   },
-  "model": "auto",
+  "model": "claude-sonnet-5-5",
   "enableWorkflows": true,
   "defaultShell": "powershell",
   "outputStyle": "Concise"
