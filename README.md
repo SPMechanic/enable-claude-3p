@@ -50,22 +50,28 @@ wrong  -  it never overwrites a value you already set.
 It also sets a `LLM_KITA_API_KEY` user environment variable (so the key is
 available to other tools and new shells).
 
-### The `settings.json` you'll get (pristine installs)
+### Resulting files: both scenarios
 
-If `~/.claude/settings.json` doesn't exist yet, the script creates it with
-these defaults:
+The script touches two JSON files in your home directory. What you end up with
+depends on whether they existed before you ran it. Both paths are covered by
+the test harness (`test-settings-env.ps1` 12 cases + `validate-template.ps1`).
+
+#### Scenario A — neither file exists (truly pristine install)
+
+**`~/.claude/settings.json`** is created from a hardcoded template, then the
+gateway key/URL are filled in from `-NewKey`:
 
 ```json
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "",
-    "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_BASE_URL": "",
+    "ANTHROPIC_AUTH_TOKEN": "<YOUR-KEY>",
+    "ANTHROPIC_API_KEY": "<YOUR-KEY>",
+    "ANTHROPIC_BASE_URL": "https://chat-api.llm-kita.com/",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
     "ENABLE_TOOL_SEARCH": "true",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5",
@@ -83,9 +89,76 @@ these defaults:
 }
 ```
 
-The key/URL are filled in immediately after from your `-NewKey`. If
-`settings.json` already exists, the script **only adds missing keys**  -  it
-never overwrites values you set yourself.
+**`~/.claude.json`** is created from scratch with just the onboarding flags
+(the app populates `machineID`/`userID`/`projects`/etc. on first launch):
+
+```json
+{
+  "hasCompletedOnboarding": true,
+  "hasTrustDialogAccepted": true,
+  "hasResetAutoModeOptInForDefaultOffer": true,
+  "_enableClaude3pSeededOnboarding": true
+}
+```
+
+The three onboarding bools suppress the CLI's first-run wizard, project-trust
+prompt, and auto-mode opt-in. The sentinel marks them as *script-seeded* so
+`-Restore` can remove exactly those later without touching onboarding you did
+via the stock flow.
+
+#### Scenario B — both files already exist
+
+The script **only adds missing keys  -  it never overwrites a value you set
+yourself**. Your existing `enabledPlugins`, `extraKnownMarketplaces`,
+`permissions`, custom `model`, and any custom tier vars are preserved
+byte-for-byte (proven by the harness against a 12-plugin / 8-marketplace
+fixture spanning every schema `source` variant).
+
+**`~/.claude/settings.json`**  -  `Ensure-SettingsEnvFields` injects, *only if
+absent*:
+
+| Field | Value if inserted |
+|---|---|
+| `env` (the whole block) | created as `{}` if missing |
+| `env.ANTHROPIC_AUTH_TOKEN` | `""` (then filled with your key) |
+| `env.ANTHROPIC_API_KEY` | `""` (then filled with your key) |
+| `env.ANTHROPIC_BASE_URL` | `""` (then filled with the probed URL) |
+| `env.API_TIMEOUT_MS` | `"3000000"` |
+| `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `"80"` |
+| `env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `"1"` |
+| `env.CLAUDE_CODE_USE_POWERSHELL_TOOL` | `"1"` |
+| `env.ENABLE_TOOL_SEARCH` | `"true"` |
+| `env.ANTHROPIC_DEFAULT_SONNET_MODEL` | `"claude-sonnet-5-5"` |
+| `env.ANTHROPIC_DEFAULT_HAIKU_MODEL` | `"claude-haiku-5-5"` |
+| `env.ANTHROPIC_DEFAULT_OPUS_MODEL` | `"claude-opus-4.8"` |
+| top-level `model` | `"claude-sonnet-5-5"` if absent; rewritten from the legacy `"auto"` alias to `"claude-sonnet-5-5"`; **any other value preserved verbatim** |
+
+Key difference from Scenario A: an existing file does **not** gain
+`$schema`, the `permissions` block, `enableWorkflows`, `defaultShell`, or
+`outputStyle`  -  those live only in the pristine template. An existing file
+keeps its own shape; only the env gateway vars, the three tier-mapping vars,
+and `model` are touched. If every one of those is already present and
+correct, the file is a byte-identical no-op (idempotent re-run).
+
+**`~/.claude.json`**  -  `Set-ClaudeStateOnboarding` adds the same three
+onboarding bools + sentinel, *only if absent*. All app-owned state
+(`machineID`, `userID`, `firstStartTime`, `projects`, `pluginUsage`,
+`skillUsage`, migration version, etc.) is preserved via a `-Depth 50`
+parse/merge/serialize round-trip. If the bools are already present, the file
+is untouched. If the file is corrupt JSON or a non-object (array/scalar), the
+script refuses to touch it and exits 6.
+
+#### Guarantees that hold in either scenario
+
+- **Every write is backed up first** (a `.bak.TIMESTAMP` sits next to the
+  original).
+- **No-BOM UTF-8** (`[System.IO.File]::WriteAllText` with
+  `UTF8Encoding($false)`).
+- **Re-parse guard**: after writing, the file is parsed again; if it's invalid
+  JSON the script exits 3 (`settings.json`) or 6 (`.claude.json`) and tells you
+  to restore from the `.bak`.
+- **Idempotent**: re-running with the same key changes nothing (no `.bak`
+  stacking, byte-identical output).
 
 ---
 
@@ -427,10 +500,14 @@ After Restore, Claude Desktop + CLI are back on the default Anthropic endpoint.
 
 - **Audit & architecture details:** see `SUMMARY.md`  -  full audit findings table
   (14 findings, all resolved), helper-function reference, and test coverage.
-- **Tests:** `test-helpers.ps1` (156 assertions, all functions + Restore logic)
-  and `validate-template.ps1` (AST-based template validation).
+- **Tests:** `test-helpers.ps1` (156 assertions, all functions + Restore logic),
+  `test-settings-env.ps1` (70 assertions across 12 file shapes, including a
+  scaled 12-plugin / 8-marketplace fixture spanning every schema `source`
+  variant), and `validate-template.ps1` (AST-based pristine-template validation,
+  asserting the tier-mapping vars + `model` field are present and `model != "auto"`).
   ```bash
   powershell -ExecutionPolicy Bypass -File .\validate-template.ps1
+  powershell -ExecutionPolicy Bypass -File .\test-settings-env.ps1
   powershell -ExecutionPolicy Bypass -File .\test-helpers.ps1
   ```
 - **The main script self-executes on dot-source** (it has a `param()` block +
@@ -448,8 +525,15 @@ The script has been verified against these states (full list in `SUMMARY.md`):
 - Truly pristine winget install (no dirs, no files).
 - Pristine MSIX/Store install (Packages\Claude_* enumeration).
 - Pristine "app launched once then quit".
-- Idempotent re-run with the same key (no `.bak` stacking).
+- Idempotent re-run with the same key (no `.bak` stacking, byte-identical).
 - Key rotation across all locations.
 - Existing stock Claude applying 3P (`.claude.json` state preserved).
 - `-ScrubEnv` with non-LLM-Kita values (host-matching preserves them).
 - `-Restore` on an already-stock install (clean no-op).
+- **`settings.json` 12 file shapes**: no file, `{}`, minimal-universal, complex
+  nested plugins+marketplaces (real user shape), legacy `"model":"auto"`, custom
+  model id, custom tier var, corrupt JSON, no-env, empty-env, array-root, and a
+  scaled 12-plugin / 8-marketplace fixture across all schema `source` variants.
+- **Pristine template**: AST-extracted and asserted to carry the three
+  tier-mapping vars, `model=claude-sonnet-5-5` (not `"auto"`), and the full
+  env/permissions/shell shape.
